@@ -7,6 +7,7 @@ def qualityGateValidation(qg) {
   // emailext body: "CONGRATS SANTI: Code coverage is higher than 80%  in Pipeline ${BUILD_NUMBER} - SUCCESS", subject: 'Info - Correct Pipeline', to: "${EMAIL_ADDRESS}"
   return false
 }
+
 pipeline {
   agent any
 
@@ -31,9 +32,9 @@ pipeline {
       }
       stage('Checkout') {
         steps {
-        // Get Github repo using Github credentials (previously added to Jenkins credentials)
-        checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/ioelgomez2019/docker-pipiline']]])        }
-        // checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/san99tiago/docker-pirate']]])        }
+          // Get Github repo using Github credentials (previously added to Jenkins credentials)
+          checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/ioelgomez2019/docker-pipiline']]])
+        }
       }
       stage('Install dependencies') {
         steps {
@@ -54,32 +55,36 @@ pipeline {
         }
       }
       stage('scan') {
-    steps {
-        withSonarQubeEnv('sonarqube') {
-            sh '''
-                /var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonar-scanner/bin/sonar-scanner \
-                -Dsonar.projectKey=SimpleExpressExample:Test \
-                -Dsonar.projectName=SimpleExpressExample \
-                -Dsonar.projectVersion=0.0.1 \
-                -Dsonar.host.url=http://mysonarqube:9000 \
-                -Dsonar.sources=./express-mysql/app/app.js,./express-mysql/app/config/db.config.js,./express-mysql/app/routes/developers.js \
-                -Dsonar.login=<tu_token> \
-                -Dsonar.tests=./express-mysql/app/test \
-                -Dsonar.javascript.lcov.reportPaths=./express-mysql/app/coverage/lcov.info
-            '''
+        steps {
+            withSonarQubeEnv('sonarqube') {
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        /var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonar-scanner/bin/sonar-scanner \
+                        -Dsonar.projectKey=SimpleExpressExample:Test \
+                        -Dsonar.projectName=SimpleExpressExample \
+                        -Dsonar.projectVersion=0.0.1 \
+                        -Dsonar.host.url=http://mysonarqube:9000 \
+                        -Dsonar.sources=./express-mysql/app/app.js,./express-mysql/app/config/db.config.js,./express-mysql/app/routes/developers.js \
+                        -Dsonar.login=${SONAR_TOKEN} \
+                        -Dsonar.tests=./express-mysql/app/test \
+                        -Dsonar.javascript.lcov.reportPaths=./express-mysql/app/coverage/lcov.info
+                    '''
+                }
+            }
         }
-    }
-}
+      }
       stage('Build docker-image') {
         steps {
-          sh "cd ./${PROJECT_ROOT};docker build -t ${REGISTRY}:${BUILD_NUMBER} . "
+          sh "cd ./${PROJECT_ROOT}; docker build -t ${REGISTRY}:${BUILD_NUMBER} . "
         }
       }
       stage('Deploy docker-image') {
         steps {
           // If the Dockerhub authentication stopped, do it again
-          sh 'docker login'
-          sh "docker push ${REGISTRY}:${BUILD_NUMBER}"
+          withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD')]) {
+            sh 'docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}'
+            sh "docker push ${REGISTRY}:${BUILD_NUMBER}"
+          }
         }
       }
   }
